@@ -103,11 +103,25 @@ class GameGUI:
         # update info label
         turn_text = "IA (Blanco)" if self.game.turn == "P1" else "Jugador (Negro)"
         difficulty_text = f"Dificultad: {self.difficulty.capitalize()}"
-        scores_text = f"IA: {self.game.scores.get('P1', 0)}  Jugador: {self.game.scores.get('P2', 0)}"
+        scores_text = f"Puntos - IA: {self.game.scores.get('P1', 0)} | Jugador: {self.game.scores.get('P2', 0)}"
         self.info_label.config(text=f"Turno: {turn_text}  |  {difficulty_text}  |  {scores_text}")
         
+        # Verificar si el juego terminó antes de procesar turnos
+        if self.is_game_over()[0]:
+            return
+            
+        # Verificar si el jugador actual tiene movimientos disponibles
+        current_moves = self.game.generate_moves_for_player(self.game.turn)
+        if not current_moves:
+            # El jugador actual no tiene movimientos - aplicar penalización y cambiar turno
+            self.game.scores[self.game.turn] = self.game.scores.get(self.game.turn, 0) - 4
+            self.game._switch_turn()
+            # Actualizar la visualización después del cambio de turno
+            self.root.after(100, self.refresh)
+            return
+        
         # Si es turno de la IA y no está pensando, hacer movimiento
-        if self.game.turn == "P1" and not self.ai_thinking and not self.is_game_over()[0]:
+        if self.game.turn == "P1" and not self.ai_thinking:
             self.make_ai_move()
 
     def on_cell_click(self, pos):
@@ -180,30 +194,42 @@ class GameGUI:
         """Verifica si el juego ha terminado y muestra el resultado."""
         over, reason, winner = self.game.is_game_over()
         if over:
-            if winner == "P1":
-                winner_text = "IA (Blanco)"
-            elif winner == "P2":
-                winner_text = "Jugador (Negro)"
-            else:
-                winner_text = "Empate"
+            # Asegurar que se muestren las puntuaciones actualizadas
+            final_scores = dict(self.game.scores)  # Hacer una copia de los scores actuales
             
-            scores = f"\nPuntuación final:\nIA: {self.game.scores.get('P1', 0)}\nJugador: {self.game.scores.get('P2', 0)}"
+            if winner == "P1":
+                winner_text = "¡La IA (Caballo Blanco) ha ganado!"
+            elif winner == "P2":
+                winner_text = "¡Has ganado! (Caballo Negro)"
+            else:
+                winner_text = "¡Empate!"
+            
+            scores = f"\n\nPuntuación Final:\n════════════════\nIA (Blanco): {final_scores.get('P1', 0)} puntos\nJugador (Negro): {final_scores.get('P2', 0)} puntos"
             
             if winner:
-                messagebox.showinfo('Juego Terminado', f'Ganador: {winner_text}\nRazón: {reason}{scores}')
+                messagebox.showinfo('🏁 Fin del Juego', f'{winner_text}{scores}')
             else:
-                messagebox.showinfo('Juego Terminado', f'Empate\nRazón: {reason}{scores}')
+                messagebox.showinfo('🏁 Fin del Juego', f'{winner_text}{scores}')
     
     def is_game_over(self):
         """Wrapper para acceder al método is_game_over del juego."""
         return self.game.is_game_over()
     
     def new_game(self):
+        # Mostrar selector de dificultad
+        new_difficulty = select_difficulty()
+        
+        # Actualizar dificultad y IA
+        self.difficulty = new_difficulty
+        depth_map = {"principiante": 2, "amateur": 4, "experto": 6}
+        self.ai_player = AIPlayer("P1", depth_map.get(new_difficulty, 4))
+        
+        # Reinicializar juego
         seed = int(time.time()) % 100000
-        # reinitialize
         self.game.initialize(width=self.board.width, height=self.board.height, seed=seed)
         self.board = self.game.board
-        # rebuild UI if size changed
+        
+        # Reconstruir UI si cambió el tamaño
         for b in self.cell_buttons.values():
             b.destroy()
         self.cell_buttons.clear()

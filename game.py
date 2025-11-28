@@ -140,6 +140,7 @@ class Game:
         """Initialize a new game: create an 8x8 board (by default), place 10 point cells and two horses.
 
         Horses are placed on random cells that do not contain the point cells. Seed can be provided for reproducibility.
+        El juego siempre lo inicia P1 (la máquina con el caballo blanco).
         """
         if player_ids is None:
             player_ids = ["P1", "P2"]
@@ -160,7 +161,8 @@ class Game:
         # set state
         self.board = board
         self.horses = horses
-        self.turn = player_ids[0]
+        # El juego siempre inicia con P1 (la máquina/caballo blanco)
+        self.turn = "P1"
         self.scores = {pid: 0 for pid in player_ids}
 
     def occupied_positions(self) -> Dict[Position, str]:
@@ -190,15 +192,24 @@ class Game:
             raise ValueError("Destination occupied")
         if self.board.is_blocked(to):
             raise ValueError("Destination blocked")
-        # perform move via horse
+        
+        # Perform move via horse
         pts = horse.move_and_collect(to, self.board)
-        # add to score
+        
+        # Add to score
         self.scores[horse.owner] = self.scores.get(horse.owner, 0) + pts
-        # switch turn
+        
+        # Switch turn
         self._switch_turn()
+        
         return pts
 
     def _switch_turn(self) -> None:
+        """Switch to the next player's turn.
+        
+        If the current player has no legal moves, they receive a -4 point penalty
+        before the turn switches.
+        """
         players = sorted(list({h.owner for h in self.horses.values()}))
         if not players:
             self.turn = None
@@ -210,12 +221,6 @@ class Game:
             self.turn = players[0]
             return
         
-        # Verificar si el jugador actual puede moverse
-        current_moves = self.generate_moves_for_player(self.turn)
-        if not current_moves:
-            # Penalización de -4 puntos por no poder moverse
-            self.scores[self.turn] = self.scores.get(self.turn, 0) - 4
-        
         next_idx = (players.index(self.turn) + 1) % len(players)
         self.turn = players[next_idx]
 
@@ -223,23 +228,42 @@ class Game:
         """Return (over, reason, winner)
 
         End conditions implemented:
-        - if only one player remains (winner)
-        - if none of the players has any legal move (winner by score or draw)
+        - If no horses remain: game over, no winner
+        - If only one player remains: that player wins
+        - If neither player has legal moves: winner determined by score
+          (with -4 penalty applied to players who couldn't move)
+        - If scores are equal after penalties: draw
+        
+        Returns:
+            Tuple of (is_over, reason, winner_id)
+            - is_over: True if game has ended
+            - reason: String describing why game ended
+            - winner_id: Player ID of winner, or None for draw/no winner
         """
         players = sorted(list({h.owner for h in self.horses.values()}))
-        if len(players) == 0:
-            return True, "no_horses_left", None
-        if len(players) == 1:
-            return True, "one_player_remaining", players[0]
         
-        # El juego termina cuando ningún jugador puede moverse
+        # No horses left - shouldn't happen in normal gameplay
+        if len(players) == 0:
+            return True, "Sin caballos en el tablero", None
+        
+        # Only one player remains - they win
+        if len(players) == 1:
+            return True, "Jugador oponente eliminado", players[0]
+        
+        # Check if both players have no legal moves
         player_moves = {p: len(self.generate_moves_for_player(p)) for p in players}
+        
         if all(v == 0 for v in player_moves.values()):
+            # La penalización de -4 ya se aplicó en la GUI cuando cada jugador se quedó sin movimientos
+            # Solo determinamos el ganador por puntuación
             p_sorted = sorted(self.scores.items(), key=lambda kv: kv[1], reverse=True)
+            
             if len(p_sorted) >= 2 and p_sorted[0][1] == p_sorted[1][1]:
-                return True, "no_moves_draw", None
-            return True, "no_moves", p_sorted[0][0]
-        return False, "ongoing", None
+                return True, "Empate - Ningún jugador puede moverse y tienen la misma puntuación", None
+            
+            return True, f"Ningún jugador puede moverse - Ganador por puntuación", p_sorted[0][0]
+        
+        return False, "Juego en curso", None
 
     def start(self, seed: Optional[int] = None, max_steps: int = 1000) -> Tuple[Dict[str, int], str]:
         """Start a simple automatic play loop until the game ends or max_steps reached.
