@@ -1,5 +1,6 @@
 from typing import List, Tuple, Dict, Optional, Set
 import random
+import math
 
 Position = Tuple[int, int]
 
@@ -208,6 +209,13 @@ class Game:
         if len(players) == 1:
             self.turn = players[0]
             return
+        
+        # Verificar si el jugador actual puede moverse
+        current_moves = self.generate_moves_for_player(self.turn)
+        if not current_moves:
+            # Penalización de -4 puntos por no poder moverse
+            self.scores[self.turn] = self.scores.get(self.turn, 0) - 4
+        
         next_idx = (players.index(self.turn) + 1) % len(players)
         self.turn = players[next_idx]
 
@@ -216,7 +224,6 @@ class Game:
 
         End conditions implemented:
         - if only one player remains (winner)
-        - if no point cells remain (winner by score or draw)
         - if none of the players has any legal move (winner by score or draw)
         """
         players = sorted(list({h.owner for h in self.horses.values()}))
@@ -224,11 +231,8 @@ class Game:
             return True, "no_horses_left", None
         if len(players) == 1:
             return True, "one_player_remaining", players[0]
-        if self.board.remaining_points_total() == 0:
-            p_sorted = sorted(self.scores.items(), key=lambda kv: kv[1], reverse=True)
-            if len(p_sorted) >= 2 and p_sorted[0][1] == p_sorted[1][1]:
-                return True, "no_points_left_draw", None
-            return True, "no_points_left", p_sorted[0][0]
+        
+        # El juego termina cuando ningún jugador puede moverse
         player_moves = {p: len(self.generate_moves_for_player(p)) for p in players}
         if all(v == 0 for v in player_moves.values()):
             p_sorted = sorted(self.scores.items(), key=lambda kv: kv[1], reverse=True)
@@ -272,6 +276,173 @@ class Game:
             steps += 1
         # reached max steps
         return self.scores, "max_steps_reached"
+
+
+class AIPlayer:
+    """IA que usa algoritmo Minimax con heurística para jugar Smart Horses."""
+    
+    def __init__(self, player_id: str, depth: int = 2):
+        self.player_id = player_id
+        self.depth = depth
+        self.opponent_id = "P2" if player_id == "P1" else "P1"
+    
+    def get_best_move(self, game: Game) -> Optional[Tuple[str, Position]]:
+        """Obtiene el mejor movimiento usando Minimax."""
+        moves = game.generate_moves_for_player(self.player_id)
+        if not moves:
+            return None
+        
+        best_move = None
+        best_value = -math.inf
+        
+        for move in moves:
+            # Crear copia del juego para simular el movimiento
+            game_copy = self._copy_game(game)
+            try:
+                game_copy.apply_move(move[0], move[1])
+                value = self._minimax(game_copy, self.depth - 1, False, -math.inf, math.inf)
+                if value > best_value:
+                    best_value = value
+                    best_move = move
+            except ValueError:
+                continue
+        
+        return best_move
+    
+    def _minimax(self, game: Game, depth: int, is_maximizing: bool, alpha: float, beta: float) -> float:
+        """Algoritmo Minimax con poda alfa-beta."""
+        # Caso base: profundidad 0 o juego terminado
+        is_over, reason, winner = game.is_game_over()
+        if depth == 0 or is_over:
+            return self._evaluate_position(game)
+        
+        if is_maximizing:
+            max_eval = -math.inf
+            moves = game.generate_moves_for_player(self.player_id)
+            
+            if not moves:  # No hay movimientos, cambiar turno y aplicar penalización
+                game_copy = self._copy_game(game)
+                game_copy._switch_turn()
+                return self._minimax(game_copy, depth - 1, False, alpha, beta)
+            
+            for move in moves:
+                game_copy = self._copy_game(game)
+                try:
+                    game_copy.apply_move(move[0], move[1])
+                    eval_score = self._minimax(game_copy, depth - 1, False, alpha, beta)
+                    max_eval = max(max_eval, eval_score)
+                    alpha = max(alpha, eval_score)
+                    if beta <= alpha:
+                        break  # Poda alfa-beta
+                except ValueError:
+                    continue
+            return max_eval
+        else:
+            min_eval = math.inf
+            moves = game.generate_moves_for_player(self.opponent_id)
+            
+            if not moves:  # No hay movimientos, cambiar turno y aplicar penalización
+                game_copy = self._copy_game(game)
+                game_copy._switch_turn()
+                return self._minimax(game_copy, depth - 1, True, alpha, beta)
+            
+            for move in moves:
+                game_copy = self._copy_game(game)
+                try:
+                    game_copy.apply_move(move[0], move[1])
+                    eval_score = self._minimax(game_copy, depth - 1, True, alpha, beta)
+                    min_eval = min(min_eval, eval_score)
+                    beta = min(beta, eval_score)
+                    if beta <= alpha:
+                        break  # Poda alfa-beta
+                except ValueError:
+                    continue
+            return min_eval
+    
+    def _evaluate_position(self, game: Game) -> float:
+        """Función heurística para evaluar una posición."""
+        # Diferencia básica de puntuación
+        score_diff = game.scores.get(self.player_id, 0) - game.scores.get(self.opponent_id, 0)
+        
+        # Factor de movilidad
+        ai_moves = len(game.generate_moves_for_player(self.player_id))
+        opponent_moves = len(game.generate_moves_for_player(self.opponent_id))
+        mobility_diff = ai_moves - opponent_moves
+        
+        # Proximidad a casillas con puntos positivos
+        proximity_value = self._evaluate_proximity(game)
+        
+        # Combinar factores con pesos
+        heuristic = score_diff + 0.5 * mobility_diff + 0.3 * proximity_value
+        
+        return heuristic
+    
+    def _evaluate_proximity(self, game: Game) -> float:
+        """Evalúa la proximidad a casillas con puntos valiosos."""
+        ai_horse = None
+        opponent_horse = None
+        
+        for horse in game.horses.values():
+            if horse.owner == self.player_id:
+                ai_horse = horse
+            else:
+                opponent_horse = horse
+        
+        if not ai_horse or not opponent_horse:
+            return 0
+        
+        ai_proximity = 0
+        opponent_proximity = 0
+        
+        # Evaluar distancia a casillas con puntos positivos
+        for pos, points in game.board.points.items():
+            if points > 0:  # Solo considerar puntos positivos
+                ai_dist = self._knight_distance(ai_horse.pos, pos)
+                opponent_dist = self._knight_distance(opponent_horse.pos, pos)
+                
+                if ai_dist > 0:
+                    ai_proximity += points / ai_dist
+                if opponent_dist > 0:
+                    opponent_proximity += points / opponent_dist
+        
+        return ai_proximity - opponent_proximity
+    
+    def _knight_distance(self, pos1: Position, pos2: Position) -> int:
+        """Calcula la distancia mínima en movimientos de caballo entre dos posiciones."""
+        if pos1 == pos2:
+            return 0
+        
+        x1, y1 = pos1
+        x2, y2 = pos2
+        dx, dy = abs(x2 - x1), abs(y2 - y1)
+        
+        # Aproximación heurística para distancia de caballo
+        if dx == 1 and dy == 1:
+            return 2
+        if dx == 2 and dy == 2:
+            return 4
+        
+        # Para casos más complejos, usar una aproximación
+        return max(2, (dx + dy + 1) // 2)
+    
+    def _copy_game(self, game: Game) -> Game:
+        """Crea una copia profunda del juego para simulación."""
+        new_game = Game()
+        
+        # Copiar tablero
+        new_game.board = Board(game.board.width, game.board.height, game.board.points.copy())
+        new_game.board.blocked = game.board.blocked.copy()
+        
+        # Copiar caballos
+        new_game.horses = {}
+        for hid, horse in game.horses.items():
+            new_game.horses[hid] = Horse(horse.id, horse.owner, horse.pos)
+        
+        # Copiar estado del juego
+        new_game.turn = game.turn
+        new_game.scores = game.scores.copy()
+        
+        return new_game
 
 
 # Helper functions kept for convenience
