@@ -158,6 +158,8 @@ class Game:
         for i, pid in enumerate(player_ids):
             hid = f"H{i+1}"
             horses[hid] = Horse(hid, pid, chosen[i])
+            # Bloquear la posición inicial del caballo
+            board.block_position(chosen[i])
         # set state
         self.board = board
         self.horses = horses
