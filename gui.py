@@ -399,7 +399,7 @@ def select_difficulty(parent=None):
     title_label.pack(pady=20)
     
     # Botones con estilo de ajedrez
-    tk.Button(dialog, text="Principiante (Profundidad 2)", 
+    tk.Button(dialog, text="Principiante", 
               width=28, 
               font=("Georgia", 10),
               bg='#F0D9B5', fg='#2C1810',
@@ -408,7 +408,7 @@ def select_difficulty(parent=None):
               cursor='hand2',
               command=lambda: on_select("principiante")).pack(pady=8)
     
-    tk.Button(dialog, text="Amateur (Profundidad 4)", 
+    tk.Button(dialog, text="Amateur", 
               width=28,
               font=("Georgia", 10),
               bg='#B58863', fg='#FFFFFF',
@@ -417,7 +417,7 @@ def select_difficulty(parent=None):
               cursor='hand2',
               command=lambda: on_select("amateur")).pack(pady=8)
     
-    tk.Button(dialog, text="Experto (Profundidad 6)", 
+    tk.Button(dialog, text="Experto", 
               width=28,
               font=("Georgia", 10),
               bg='#8B4513', fg='#FFFFFF',
