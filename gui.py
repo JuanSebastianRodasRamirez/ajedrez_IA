@@ -49,6 +49,8 @@ class GameGUI:
 
         self.cell_buttons = {}
         self._build_board_ui()
+        # Asegurar que la ventana tenga tamaño suficiente para mostrar 8x8
+        self._ensure_window_size()
         self.refresh()
 
     def _build_board_ui(self):
@@ -65,6 +67,34 @@ class GameGUI:
                                 cursor='hand2')
                 btn.grid(row=y, column=x, padx=0, pady=0)
                 self.cell_buttons[(x, y)] = btn
+
+        # Hacer que la grilla use todo el espacio disponible
+        for r in range(self.board.height):
+            self.board_frame.grid_rowconfigure(r, weight=1)
+        for c in range(self.board.width):
+            self.board_frame.grid_columnconfigure(c, weight=1)
+
+    def _ensure_window_size(self):
+        """Ajusta el tamaño mínimo de la ventana para que no se recorte la última fila."""
+        try:
+            # Calcular tamaño requerido por una celda
+            # Tomar una celda cualquiera
+            sample_btn = next(iter(self.cell_buttons.values()))
+            self.root.update_idletasks()
+            cell_w = sample_btn.winfo_reqwidth()
+            cell_h = sample_btn.winfo_reqheight()
+
+            # Márgenes aproximados del contenedor y marcos
+            outer_padding_w = 40
+            outer_padding_h = 140  # incluye barra superior y marcos
+
+            min_w = cell_w * self.board.width + outer_padding_w
+            min_h = cell_h * self.board.height + outer_padding_h
+
+            # Establecer tamaño mínimo para evitar que se oculte la fila 8
+            self.root.minsize(min_w, min_h)
+        except Exception:
+            pass
 
     def refresh(self):
         occ = self.game.occupied_positions()
